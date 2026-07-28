@@ -1,79 +1,32 @@
 package main
 
 import (
-	"fmt"
-	"io"
-	"net/http"
-	"sort"
-	"strconv"
 	"strings"
-	"sync"
+	"time"
 )
 
-var (
-	mp     = make(map[string]int)
-	wg     sync.WaitGroup
-	mx     sync.Mutex
-	sm     int
-	client http.Client
-)
+func QuizRunner(questions, answers []string, answerCh chan string) int {
+	correct := 0
 
-func BestStudents(names []string) (string, error) {
-	for _, name := range names {
-		wg.Add(1)
+	for i := range questions {
+		timeout := make(chan bool, 1)
+		go func() {
+			time.Sleep(1 * time.Second)
+			timeout <- true
+		}()
 
-		go func(name string) {
-			defer wg.Done()
+		select {
+		case <-timeout:
+			continue
+		case answer := <-answerCh:
+			userAnswer := strings.TrimSpace(strings.ToLower(answer))
+			correctAnswer := strings.TrimSpace(strings.ToLower(answers[i]))
 
-			url := fmt.Sprintf("http://localhost:8082/mark?name=%s", name)
-			res, err := client.Get(url)
-			if err != nil {
-				mx.Lock()
-				mp[name] = 0
-				mx.Unlock()
-				return
+			if userAnswer == correctAnswer {
+				correct++
 			}
-			body, err := io.ReadAll(res.Body)
-			if err != nil {
-				mx.Lock()
-				mp[name] = 0
-				mx.Unlock()
-				return
-			}
-			defer res.Body.Close()
-
-			val, err := strconv.Atoi(string(body))
-			mx.Lock()
-			mp[name] = val
-			mx.Unlock()
-		}(name)
-	}
-
-	wg.Wait()
-
-	if len(mp) == 0 {
-		return "", fmt.Errorf("no data")
-	}
-
-	for _, m := range mp {
-		if m == 0 {
-			return "", fmt.Errorf("no data for name")
-		}
-		sm += m
-	}
-
-	x := sm / len(mp)
-	answer := make([]string, len(mp))
-
-	for n, m := range mp {
-		if m > x {
-			answer = append(answer, n)
 		}
 	}
 
-	sort.Slice(answer, func(i int, j int) bool {
-		return answer[i] < answer[j]
-	})
-
-	return strings.Join(answer, ","), nil
+	return correct
 }
